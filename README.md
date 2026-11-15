@@ -22,7 +22,10 @@ Speech recognition, dictionary lookup and the system voices run locally. Only tr
 ## Features
 
 **Translation**
-- Streaming output from any OpenAI-compatible endpoint; three model tiers, with optional
+- Out of the box it talks to [Index-Translate](https://github.com/bilibili/Index-Translate)'s
+  free public API (`https://index-translate.bilibili.com/v1`) — no key, no GPU. Any
+  OpenAI-compatible endpoint can be swapped in via `api_base`; everything below is identical.
+- Streaming output, three model tiers (`Index-Translate` 2B / 9B / 35B-A3B), with optional
   auto-downgrade that retries on the next tier down when a model stalls (12 s to first token).
 - 34 target languages, auto source detection, long text split at sentence boundaries.
 - Image translation without OCR: pick, drag or `Ctrl+V` a screenshot and the model reads it.
@@ -67,7 +70,7 @@ Captions and lookup need two extra downloads, both configured in **Settings → 
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `api_base` | demo gateway | OpenAI-compatible base URL — point it at your own endpoint |
+| `api_base` | `https://index-translate.bilibili.com/v1` | OpenAI-compatible base URL — the Index-Translate public API by default, point it at your own endpoint if you prefer |
 | `api_key` | *(empty)* | bearer token; leave empty if not needed |
 | `model` | `Index-Translate-35B-A3B` | model id |
 | `model_fallback` / `model_fallback_timeout` | `true` / `12` | downgrade when no first token arrives in time |
@@ -119,6 +122,7 @@ Core/AppConfig.cs               config, language list, model tiers
 
 | Project | Used for | License |
 | --- | --- | --- |
+| [Index-Translate](https://github.com/bilibili/Index-Translate) | the translation models, and the free public OpenAI-compatible API (`index-translate.bilibili.com/v1`) the app defaults to | Apache-2.0 |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | offline ASR engine and C# bindings (vendored, with onnxruntime) | Apache-2.0 |
 | [NVIDIA Parakeet TDT-CTC 0.6B (Japanese)](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | the speech recognition model | CC-BY-4.0 |
 | [Jitendex](https://github.com/stephenmk/Jitendex) | dictionary data, derived from JMdict / [EDRDG](https://www.edrdg.org/jmdict/j_jmdict.html) | CC BY-SA 4.0 |
@@ -129,6 +133,10 @@ Core/AppConfig.cs               config, language list, model tiers
 No third-party source code is vendored apart from the sherpa-onnx binaries; the Edge TTS
 client and the dictionary reader are original implementations written against those
 projects' published protocols and file formats.
+
+Translation is the one feature that depends on someone else's service: the default endpoint
+is Index-Translate's free public API, so its availability and rate limits are not ours to
+control. Point `api_base` at a self-hosted deployment for anything beyond casual use.
 
 ## License
 

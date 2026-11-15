@@ -21,7 +21,10 @@
 ## 功能
 
 **翻译**
-- 任意 OpenAI 兼容接口 + 流式输出；三档模型，可选「首字超时自动降级」（默认 12 秒无首字就换下一档）。
+- 默认直接调用 [Index-Translate](https://github.com/bilibili/Index-Translate) 的免费公网 API
+  （`https://index-translate.bilibili.com/v1`，不用 Key、不用显卡）；也可以通过 `api_base`
+  换成任何 OpenAI 兼容接口，下面这些功能完全一样。
+- 三档模型（`Index-Translate` 2B / 9B / 35B-A3B）+ 流式输出；可选「首字超时自动降级」（默认 12 秒无首字就换下一档）。
 - 34 种目标语言、源语言自动检测、长文按句子边界分段。
 - **图片翻译（零 OCR）**：选图 / 拖进窗口 / `Ctrl+V` 粘贴截图，模型直接读图。
 - 术语表、指令预设、文体声明；JSON 与代码保格式。
@@ -62,7 +65,7 @@
 
 | 键 | 默认 | 含义 |
 | --- | --- | --- |
-| `api_base` | 演示网关 | OpenAI 兼容地址，换成你自己的 |
+| `api_base` | `https://index-translate.bilibili.com/v1` | OpenAI 兼容地址，默认用 Index-Translate 公网 API，想自建就换成自己的 |
 | `api_key` | 空 | 不需要鉴权可留空 |
 | `model` | `Index-Translate-35B-A3B` | 模型 id |
 | `model_fallback` / `model_fallback_timeout` | `true` / `12` | 首字超时自动降级 |
@@ -114,6 +117,7 @@ Core/AppConfig.cs               配置、语言表、模型档位
 
 | 项目 | 用在哪 | 许可 |
 | --- | --- | --- |
+| [Index-Translate](https://github.com/bilibili/Index-Translate) | 翻译模型；以及程序默认调用的免费公网 OpenAI 兼容 API（`index-translate.bilibili.com/v1`） | Apache-2.0 |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | 离线语音识别引擎 + C# 绑定（vendor，含 onnxruntime） | Apache-2.0 |
 | [NVIDIA Parakeet TDT-CTC 0.6B（日语）](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | 语音识别模型 | CC-BY-4.0 |
 | [Jitendex](https://github.com/stephenmk/Jitendex) | 词典数据（由 JMdict / [EDRDG](https://www.edrdg.org/jmdict/j_jmdict.html) 派生） | CC BY-SA 4.0 |
@@ -123,6 +127,9 @@ Core/AppConfig.cs               配置、语言表、模型档位
 
 除 sherpa-onnx 的二进制外，仓库里没有 vendor 其它项目的源码；Edge TTS 客户端与词典读取
 都是照这些项目公开的协议与文件格式自己写的实现。
+
+翻译是唯一依赖外部服务的地方：默认走 Index-Translate 的免费公网 API，它的可用性和限流
+不由本项目控制；正式使用建议把 `api_base` 指向自建部署。
 
 ## 许可
 
