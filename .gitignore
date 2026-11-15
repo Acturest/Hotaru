@@ -1,0 +1,34 @@
+# ---- 构建产物 ----
+bin/
+obj/
+发布/
+*.user
+*.suo
+.vs/
+
+# ---- 运行时数据（跟机器/个人有关，不要提交） ----
+悬浮翻译器.config.json
+悬浮翻译器.history.json
+悬浮翻译器.生词本.json
+悬浮翻译器.log
+悬浮翻译器.log.*
+悬浮翻译器.tts_cache.txt
+参考音频/
+参考音频/**/*.wav
+参考音频/**/*.mp3
+demo_dict/
+shot*.png
+tmp/
+
+# ---- 本地模型 / 词典（体量大，自己下载） ----
+models/
+dict/
+dicts/
+*.onnx
+*.safetensors
+term_bank_*.json
+
+# ---- 系统垃圾 ----
+Thumbs.db
+desktop.ini
+.DS_Store

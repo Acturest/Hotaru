@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>悬浮翻译器</AssemblyName>
+    <RootNamespace>FloatingTranslator</RootNamespace>
+    <ApplicationIcon></ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>1.0.0</Version>
+    <AssemblyTitle>悬浮翻译器</AssemblyTitle>
+    <Product>悬浮翻译器</Product>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <PublishSingleFile>false</PublishSingleFile>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+  </ItemGroup>
+
+  <!-- 离线 vendor 的 sherpa-onnx 1.13.8（无需 NuGet restore）：托管 dll + 两个 native dll -->
+  <ItemGroup>
+    <Reference Include="sherpa-onnx">
+      <HintPath>第三方\sherpa-onnx\sherpa-onnx.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="第三方\sherpa-onnx\sherpa-onnx-c-api.dll" CopyToOutputDirectory="PreserveNewest" Link="sherpa-onnx-c-api.dll" />
+    <None Update="第三方\sherpa-onnx\onnxruntime.dll" CopyToOutputDirectory="PreserveNewest" Link="onnxruntime.dll" />
+  </ItemGroup>
+
+</Project>
