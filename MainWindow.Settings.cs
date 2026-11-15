@@ -1710,6 +1710,24 @@ namespace FloatingTranslator
                         ShowResultCard();
                         break;
 
+                    // 出图用：输入框一句日文 + 结果卡一句中文，配合 FT_SHOT 生成 README 头图
+                    case "hero":
+                        OpenInput();
+                        _suppressAuto = true;
+                        InputBox.Text = "この曲、歌詞が好きで何回も聴いてる。特にサビのところがいい。";
+                        InputBox.CaretIndex = InputBox.Text.Length;
+                        _suppressAuto = false;
+                        SetResult("这首歌的歌词我很喜欢，已经听了好多遍，尤其是副歌那段。");
+                        ResultMeta.Text = "0.8s · 中文";
+                        ShowResultCard();
+                        PositionAll();
+                        await Task.Delay(400);
+                        {
+                            string shot = Environment.GetEnvironmentVariable("FT_SHOT");
+                            if (!string.IsNullOrWhiteSpace(shot)) SaveShot(shot);
+                        }
+                        break;
+
                     // 开发钩子：语音识别卡片 / 词典面板（自动截图检查用）
                     case "asr":
                         OpenInput();
