@@ -57,7 +57,7 @@
 | 需要 | 用途 | 从哪来 |
 | --- | --- | --- |
 | ASR 模型文件夹（`model.int8.onnx` + `tokens.txt`） | 实时字幕（默认方案） | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8`（设置里有下载按钮） |
-| 流式模型文件夹（`encoder` / `decoder` / `joiner` + `tokens.txt`） | 可选：边听边出半句 | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
+| 流式模型文件夹（`encoder` / `decoder` / `joiner` + `tokens.txt`） | 可选：边听边出半句 | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20`（约 510 MB，设置里也有下载按钮） |
 | Yomitan 词典文件夹（`term_bank_*.json`） | 点词查词 | Jitendex 或任意 Yomitan 格式词典（同样可一键下载） |
 
 ## 配置
@@ -109,7 +109,7 @@ MainWindow.Settings.cs          设置面板、历史与生词本窗口
 MainWindow.Asr.cs               实时字幕、字幕命中、词典浮层
 Core/TranslateClient.cs         流式客户端 + 模型降级
 Core/YomitanDictionary.cs       词典索引与活用还原
-Core/SherpaAsr.cs               离线识别封装
+Core/SherpaAsr.cs               离线 / 流式两种识别封装
 Core/LoopbackCapture.cs         WASAPI loopback 采集
 Core/EdgeTts.cs, EdgeDrm.cs     Edge 朗读合成与令牌推导
 Core/Speaker.cs, IrodoriTts.cs  本地语音

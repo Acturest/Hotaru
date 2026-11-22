@@ -63,7 +63,7 @@ Captions and lookup need two extra downloads, both configured in **Settings → 
 | Component | Used for | Where to get it |
 | --- | --- | --- |
 | ASR model folder (`model.int8.onnx` + `tokens.txt`) | live captions, default engine | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8` (the app can download it) |
-| Streaming model folder (`encoder` / `decoder` / `joiner` + `tokens.txt`) | optional live-partial captions | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
+| Streaming model folder (`encoder` / `decoder` / `joiner` + `tokens.txt`) | optional live-partial captions | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` (~510 MB, also downloadable in-app) |
 | Yomitan dictionary folder (`term_bank_*.json`) | click-to-lookup | Jitendex, or any Yomitan-format dictionary (also downloadable in-app) |
 
 ## Configuration
@@ -115,7 +115,7 @@ MainWindow.Settings.cs          settings panel, history and word book windows
 MainWindow.Asr.cs               captions, word hit-testing, dictionary popup
 Core/TranslateClient.cs         streaming client + model downgrade
 Core/YomitanDictionary.cs       dictionary index + deinflection
-Core/SherpaAsr.cs               offline recognizer
+Core/SherpaAsr.cs               offline + streaming recognizers
 Core/LoopbackCapture.cs         WASAPI loopback capture
 Core/EdgeTts.cs, EdgeDrm.cs     Edge Read Aloud synthesis + token derivation
 Core/Speaker.cs, IrodoriTts.cs  local voices
