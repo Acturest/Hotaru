@@ -30,8 +30,8 @@
 - 术语表、指令预设、文体声明；JSON 与代码保格式。
 
 **字幕与查词（本地 CPU）**
-- 用 WASAPI loopback 捕获电脑正在播放的声音（不需要麦克风权限），
-  `sherpa-onnx` + Parakeet 0.6B 日语模型（INT8）离线识别。
+- 用 WASAPI loopback 捕获电脑正在播放的声音（不需要麦克风权限），本地 `sherpa-onnx` 识别：
+  默认 Parakeet 0.6B 日语（INT8，整段解码），可选 Zipformer 中英流式模型（边听边出半句）。
 - 字幕两行（上日文 / 下中文），保留最近 60 条可上翻。
 - 点任意日语词查词：活用先还原成辞书形，浮层贴着光标显示词形 / 读音 / 词性 / 释义。
 - 生词本：浮层里 ☆ 收藏，可搜索、导出 CSV。
@@ -56,7 +56,8 @@
 
 | 需要 | 用途 | 从哪来 |
 | --- | --- | --- |
-| ASR 模型文件夹（`model.int8.onnx` + `tokens.txt`） | 实时字幕 | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8`（设置里有下载按钮） |
+| ASR 模型文件夹（`model.int8.onnx` + `tokens.txt`） | 实时字幕（默认方案） | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8`（设置里有下载按钮） |
+| 流式模型文件夹（`encoder` / `decoder` / `joiner` + `tokens.txt`） | 可选：边听边出半句 | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
 | Yomitan 词典文件夹（`term_bank_*.json`） | 点词查词 | Jitendex 或任意 Yomitan 格式词典（同样可一键下载） |
 
 ## 配置
@@ -72,7 +73,9 @@
 | `source` / `target` | `auto` / `zh` | 语言代码 |
 | `chunk_limit` | `700` | 长文分段字数 |
 | `instruction` / `genre` / `glossary` | 空 | 指令 / 文体 / 术语表 |
-| `asr_model_dir` / `dict_dir` | 空 | 字幕模型与词典目录 |
+| `asr_engine` | `offline` | `offline` = 原 Parakeet 日语；`streaming` = Zipformer 中英流式 |
+| `asr_model_dir` / `asr_stream_model_dir` | 空 | 两套识别模型各自的目录 |
+| `dict_dir` | 空 | 词典目录 |
 | `speak_engine` | `system` | `system` 系统语音 / `edge` 在线语音 |
 | `hotkey_toggle` / `hotkey_select` | `Ctrl+Alt+Q` / `Ctrl+Alt+W` | 留空 = 不注册 |
 
@@ -119,7 +122,8 @@ Core/AppConfig.cs               配置、语言表、模型档位
 | --- | --- | --- |
 | [Index-Translate](https://github.com/bilibili/Index-Translate) | 翻译模型；以及程序默认调用的免费公网 OpenAI 兼容 API（`index-translate.bilibili.com/v1`） | Apache-2.0 |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | 离线语音识别引擎 + C# 绑定（vendor，含 onnxruntime） | Apache-2.0 |
-| [NVIDIA Parakeet TDT-CTC 0.6B（日语）](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | 语音识别模型 | CC-BY-4.0 |
+| [NVIDIA Parakeet TDT-CTC 0.6B（日语）](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | 默认语音识别模型 | CC-BY-4.0 |
+| [Streaming Zipformer 中英双语](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20) | 可选的流式识别模型 | Apache-2.0 |
 | [Jitendex](https://github.com/stephenmk/Jitendex) | 词典数据（由 JMdict / [EDRDG](https://www.edrdg.org/jmdict/j_jmdict.html) 派生） | CC BY-SA 4.0 |
 | [Yomitan](https://github.com/yomidevs/yomitan) | 查词面板读取的词典文件格式 | GPL-3.0（仅格式） |
 | [edge-tts](https://github.com/rany2/edge-tts) | 公开了 Edge 朗读协议与 `Sec-MS-GEC` 推导，本项目的 C# 实现参照它 | GPL-3.0 |

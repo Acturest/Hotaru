@@ -20,6 +20,8 @@ namespace FloatingTranslator
     {
         private const string AsrModelUrl =
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2";
+        private const string AsrStreamModelUrl =
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2";
         private const string JitendexUrl = "https://jitendex.org/";
 
         private SherpaAsr _asr;
@@ -27,6 +29,8 @@ namespace FloatingTranslator
         private LoopbackCapture _loop;
         private CancellationTokenSource _liveCts;
         private readonly object _liveLock = new object();
+        private readonly object _streamFeedLock = new object();
+        private readonly List<float> _streamFeed = new List<float>();
         private readonly List<float> _liveBuf = new List<float>();
         private readonly List<string> _liveLines = new List<string>();
         private readonly List<LiveItem> _liveItems = new List<LiveItem>();
@@ -54,6 +58,10 @@ namespace FloatingTranslator
         private bool _asrInited;
         private CancellationTokenSource _dictLoadCts;
         private TextBlock _asrHint;
+        private FrameworkElement _asrOfflineRow;
+        private FrameworkElement _asrStreamRow;
+        private StackPanel _asrOfflineDlRow;
+        private StackPanel _asrStreamDlRow;
         private TextBlock _dictHint;
         private FrameworkElement _asrSectionAnchor;
         private Brush _asrIdleFill;
@@ -236,6 +244,7 @@ namespace FloatingTranslator
                 _liveItems.Clear();
                 _liveTranscript.Clear();
             }
+            lock (_streamFeedLock) _streamFeed.Clear();
             _liveFollow = true;
             _captionDirty = true;
             _liveTransErrorNotified = false;
@@ -245,7 +254,12 @@ namespace FloatingTranslator
 
             try
             {
-                await Task.Run(() => _asr.Load(_cfg.asr_model_dir, _cfg.asr_threads));
+                bool streaming = _cfg.asr_engine == "streaming";
+                await Task.Run(() =>
+                {
+                    if (streaming) _asr.LoadStream(_cfg.asr_stream_model_dir, _cfg.asr_threads);
+                    else _asr.Load(_cfg.asr_model_dir, _cfg.asr_threads);
+                });
                 if (!_liveLoading || _liveRunning) return;
 
                 LoopbackCapture loop = new LoopbackCapture();
@@ -320,6 +334,11 @@ namespace FloatingTranslator
                 _liveHasVoice = false;
                 _livePartial = "";
             }
+            lock (_streamFeedLock) _streamFeed.Clear();
+            if (_asr != null && _asr.Streaming)
+            {
+                try { _asr.StreamReset(); } catch (Exception ex) { App.Log("流式识别重置失败：" + ex.Message); }
+            }
             SetAsrButtonVisual(false);
             AsrActionBtn.Content = "开始聆听";
             if (was) SetAsrStatus("已停止聆听 · 共 " + _liveFinalCount + " 句", false);
@@ -327,6 +346,10 @@ namespace FloatingTranslator
 
         private void OnLoopData(float[] samples, int rate)
         {
+            if (_cfg.asr_engine == "streaming")
+            {
+                lock (_streamFeedLock) _streamFeed.AddRange(samples);
+            }
             lock (_liveLock)
             {
                 _liveRate = rate;
@@ -351,13 +374,38 @@ namespace FloatingTranslator
             }));
         }
 
+        private async Task FeedStreamAsync(int rate, CancellationToken ct)
+        {
+            float[] feed;
+            lock (_streamFeedLock)
+            {
+                if (_streamFeed.Count == 0) return;
+                feed = _streamFeed.ToArray();
+                _streamFeed.Clear();
+            }
+            await Task.Run(() => _asr.StreamAccept(feed, rate), ct).ConfigureAwait(false);
+        }
+
+        private async Task<string> DecodeStreamAsync(CancellationToken ct, bool reset)
+        {
+            await FeedStreamAsync(_liveRate, ct).ConfigureAwait(false);
+            return await Task.Run(() =>
+            {
+                string text = _asr.StreamDecode();
+                if (reset) _asr.StreamReset();
+                return text;
+            }, ct).ConfigureAwait(false);
+        }
+
         private async Task LiveLoopAsync(CancellationToken ct)
         {
+            bool streaming = _cfg.asr_engine == "streaming";
             try
             {
                 while (!ct.IsCancellationRequested)
                 {
                     await Task.Delay(250, ct).ConfigureAwait(false);
+                    if (streaming) await FeedStreamAsync(_liveRate, ct).ConfigureAwait(false);
 
                     int rate = _liveRate;
                     float[] chunk;
@@ -389,7 +437,9 @@ namespace FloatingTranslator
                         }
                         _liveHasVoice = false;
                         _liveLastPartial = DateTime.MinValue;
-                        string text = await DecodeAsync(chunk, rate, ct).ConfigureAwait(false);
+                        string text = streaming
+                            ? await DecodeStreamAsync(ct, true).ConfigureAwait(false)
+                            : await DecodeAsync(chunk, rate, ct).ConfigureAwait(false);
                         if (ct.IsCancellationRequested) break;
                         _livePartial = "";
                         if (!string.IsNullOrWhiteSpace(text)) AddFinalLine(text);
@@ -411,7 +461,9 @@ namespace FloatingTranslator
                         }
                         else part = chunk;
 
-                        string text = await DecodeAsync(part, rate, ct).ConfigureAwait(false);
+                        string text = streaming
+                            ? await DecodeStreamAsync(ct, false).ConfigureAwait(false)
+                            : await DecodeAsync(part, rate, ct).ConfigureAwait(false);
                         if (ct.IsCancellationRequested) break;
                         if (!string.IsNullOrWhiteSpace(text) && text != _livePartial)
                         {
@@ -818,6 +870,18 @@ namespace FloatingTranslator
             modelPath = "";
             tokensPath = "";
             error = "";
+            if (_cfg.asr_engine == "streaming")
+            {
+                string enc, dec, join;
+                if (!SherpaAsr.TryResolveStream(_cfg.asr_stream_model_dir, out enc, out dec, out join,
+                                                out tokensPath, out error))
+                {
+                    error = "模型无效：" + error;
+                    return false;
+                }
+                modelPath = enc;
+                return true;
+            }
             if (string.IsNullOrWhiteSpace(_cfg.asr_model_dir))
             {
                 error = "还没设置语音模型：下载 Parakeet 日语 INT8，解压后在上面选含 model.int8.onnx 的文件夹。";
@@ -839,7 +903,8 @@ namespace FloatingTranslator
             {
                 string dirName = "";
                 try { dirName = Path.GetFileName(Path.GetDirectoryName(mp)); } catch { }
-                _asrHint.Text = "已找到模型：" + dirName + "（CPU INT8，sherpa-onnx 1.13.8）";
+                string mode = _cfg.asr_engine == "streaming" ? "流式 Zipformer 中英" : "离线 Parakeet 日语";
+                _asrHint.Text = "已找到" + mode + "模型：" + dirName + "（CPU INT8，sherpa-onnx 1.13.8）";
                 _asrHint.Foreground = Res("AccentBrush");
             }
             else
@@ -847,6 +912,18 @@ namespace FloatingTranslator
                 _asrHint.Text = err;
                 _asrHint.Foreground = Res("DimBrush");
             }
+        }
+
+        private void ApplyAsrEngineUi()
+        {
+            bool streaming = _cfg.asr_engine == "streaming";
+            Visibility a = streaming ? Visibility.Collapsed : Visibility.Visible;
+            Visibility b = streaming ? Visibility.Visible : Visibility.Collapsed;
+            if (_asrOfflineRow != null) _asrOfflineRow.Visibility = a;
+            if (_asrStreamRow != null) _asrStreamRow.Visibility = b;
+            if (_asrOfflineDlRow != null) _asrOfflineDlRow.Visibility = a;
+            if (_asrStreamDlRow != null) _asrStreamDlRow.Visibility = b;
+            UpdateAsrHint();
         }
 
         // ============================ 设置面板：语音识别与词典 ============================
@@ -867,6 +944,14 @@ namespace FloatingTranslator
             };
             SettingsStack.Children.Add(liveHint);
 
+            SelectRow("识别方案", _cfg.asr_engine == "streaming" ? "流式 Zipformer 中英" : "离线 Parakeet 日语",
+                () => new List<PopupItem>
+                {
+                    new PopupItem { Value = "offline",   Text = "离线 Parakeet 日语（原方案）" },
+                    new PopupItem { Value = "streaming", Text = "流式 Zipformer 中英（另下模型）" },
+                },
+                v => { _cfg.asr_engine = v; ApplyAsrEngineUi(); });
+
             var fModel = Field(_cfg.asr_model_dir);
             fModel.TextChanged += (s, e) => UpdateAsrHint();
             var browse = new Button { Content = "浏览", Style = (Style)FindResource("TextBtn"), Margin = new Thickness(6, 0, 0, 0) };
@@ -878,7 +963,22 @@ namespace FloatingTranslator
             Grid.SetColumn(browse, 1);
             modelRow.Children.Add(fModel);
             modelRow.Children.Add(browse);
-            SettingsStack.Children.Add(RowFull("模型文件夹（model.int8.onnx + tokens.txt）", modelRow));
+            _asrOfflineRow = RowFull("离线模型文件夹（model.int8.onnx + tokens.txt）", modelRow);
+            SettingsStack.Children.Add(_asrOfflineRow);
+
+            var fStream = Field(_cfg.asr_stream_model_dir);
+            fStream.TextChanged += (s, e) => UpdateAsrHint();
+            var browseStream = new Button { Content = "浏览", Style = (Style)FindResource("TextBtn"), Margin = new Thickness(6, 0, 0, 0) };
+            browseStream.Click += (s, e) => PickAsrModel(fStream);
+            var streamRow = new Grid();
+            streamRow.ColumnDefinitions.Add(new ColumnDefinition());
+            streamRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(fStream, 0);
+            Grid.SetColumn(browseStream, 1);
+            streamRow.Children.Add(fStream);
+            streamRow.Children.Add(browseStream);
+            _asrStreamRow = RowFull("流式模型文件夹（encoder / decoder / joiner + tokens.txt）", streamRow);
+            SettingsStack.Children.Add(_asrStreamRow);
 
             _asrHint = new TextBlock
             {
@@ -897,11 +997,11 @@ namespace FloatingTranslator
             cAuto.ToolTip = "需要翻译接口可用；字幕出完一条就译一条。";
             SettingsStack.Children.Add(cAuto);
 
-            var dl = new Button { Content = "下载模型", Style = (Style)FindResource("TextBtn") };
+            var dl = new Button { Content = "下载离线模型", Style = (Style)FindResource("TextBtn") };
             dl.Click += (s, e) => OpenUrl(AsrModelUrl);
             var hint = new TextBlock
             {
-                Text = "约 625 MB，解压后选文件夹",
+                Text = "日语 · 约 625 MB",
                 FontSize = 10,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(8, 0, 0, 0),
@@ -909,10 +1009,27 @@ namespace FloatingTranslator
                 ToolTip = "下载的是 .tar.bz2，用 7-Zip 解压（或 tar -xjf），选解压出的文件夹即可。",
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            var dlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
-            dlRow.Children.Add(dl);
-            dlRow.Children.Add(hint);
-            SettingsStack.Children.Add(dlRow);
+            _asrOfflineDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+            _asrOfflineDlRow.Children.Add(dl);
+            _asrOfflineDlRow.Children.Add(hint);
+            SettingsStack.Children.Add(_asrOfflineDlRow);
+
+            var dlStream = new Button { Content = "下载流式模型", Style = (Style)FindResource("TextBtn") };
+            dlStream.Click += (s, e) => OpenUrl(AsrStreamModelUrl);
+            var streamHint = new TextBlock
+            {
+                Text = "中英 · 约 510 MB",
+                FontSize = 10,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(8, 0, 0, 0),
+                Foreground = Res("DimBrush"),
+                ToolTip = "Zipformer 中英双语流式模型；解压后选含 encoder / decoder / joiner 三个 onnx 的文件夹。",
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _asrStreamDlRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+            _asrStreamDlRow.Children.Add(dlStream);
+            _asrStreamDlRow.Children.Add(streamHint);
+            SettingsStack.Children.Add(_asrStreamDlRow);
 
             SettingsStack.Children.Add(SectionTitle("词典（点词查词）"));
 
@@ -965,6 +1082,7 @@ namespace FloatingTranslator
             _savers.Add(() =>
             {
                 _cfg.asr_model_dir = (fModel.Text ?? "").Trim();
+                _cfg.asr_stream_model_dir = (fStream.Text ?? "").Trim();
                 _cfg.asr_threads = (int)Math.Round(sThreads.Value);
                 _cfg.asr_auto_translate = cAuto.IsChecked == true;
                 _cfg.dict_dir = (fDict.Text ?? "").Trim();
@@ -972,6 +1090,8 @@ namespace FloatingTranslator
                 _cfg.dict_preload = cPreload.IsChecked == true;
                 _cfg.dict_speak = cDictSpeak.IsChecked == true;
             });
+
+            ApplyAsrEngineUi();
 
             // 面板可能被重建（RebuildSettings）：已有运行时状态就直接刷新提示
             if (_asr != null)
@@ -991,7 +1111,9 @@ namespace FloatingTranslator
         {
             var dlg = new Microsoft.Win32.OpenFolderDialog
             {
-                Title = "选择语音模型文件夹（含 model.int8.onnx 与 tokens.txt）",
+                Title = _cfg.asr_engine == "streaming"
+                    ? "选择流式模型文件夹（含 encoder / decoder / joiner 与 tokens.txt）"
+                    : "选择离线模型文件夹（含 model.int8.onnx 与 tokens.txt）",
             };
             if (dlg.ShowDialog() != true) return;
             box.Text = dlg.FolderName;

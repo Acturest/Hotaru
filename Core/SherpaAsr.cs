@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using SherpaOnnx;
@@ -18,11 +19,14 @@ namespace FloatingTranslator
     {
         private readonly object _gate = new object();
         private OfflineRecognizer _rec;
+        private OnlineRecognizer _online;
+        private OnlineStream _onlineStream;
         private string _modelPath = "";
         private string _tokensPath = "";
         private int _threads;
 
-        public bool Ready { get { lock (_gate) return _rec != null; } }
+        public bool Ready { get { lock (_gate) return _rec != null || _online != null; } }
+        public bool Streaming { get { lock (_gate) return _online != null; } }
         public string ModelPath { get { lock (_gate) return _modelPath; } }
         public int Threads { get { lock (_gate) return _threads; } }
 
@@ -139,6 +143,12 @@ namespace FloatingTranslator
                 var old = _rec;
                 _rec = null;
                 if (old != null) { try { old.Dispose(); } catch { } }
+                if (_onlineStream != null) { try { _onlineStream.Dispose(); } catch { } }
+                if (_online != null) { try { _online.Dispose(); } catch { } }
+                _onlineStream = null;
+                _online = null;
+                _modelPath = "";
+                _tokensPath = "";
 
                 var cfg = new OfflineRecognizerConfig();
                 cfg.FeatConfig.SampleRate = 16000;
@@ -215,12 +225,154 @@ namespace FloatingTranslator
             return text.Trim();
         }
 
+        /// <summary>
+        /// 解析流式 Zipformer 模型：encoder / decoder / joiner + tokens.txt。
+        /// 兼容官方 tar.bz2 解压后的目录（文件名带 epoch），也接受同前缀的其他 onnx。
+        /// </summary>
+        public static bool TryResolveStream(string input, out string encoder, out string decoder,
+                                            out string joiner, out string tokens, out string error)
+        {
+            encoder = decoder = joiner = tokens = "";
+            error = "";
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                error = "还没设置流式语音模型：下载 Zipformer 中英模型，解压后选含 encoder / decoder / joiner 的文件夹。";
+                return false;
+            }
+            try
+            {
+                string dir = input.Trim();
+                if (File.Exists(dir)) dir = Path.GetDirectoryName(dir);
+                if (!Directory.Exists(dir))
+                {
+                    error = "流式模型文件夹不存在：" + dir;
+                    return false;
+                }
+                string[] files = Directory.GetFiles(dir, "*.onnx", SearchOption.AllDirectories);
+                encoder = PickOnnx(files, "encoder-epoch-99-avg-1.int8.onnx", "encoder", true);
+                decoder = PickOnnx(files, "decoder-epoch-99-avg-1.onnx", "decoder", false);
+                joiner = PickOnnx(files, "joiner-epoch-99-avg-1.onnx", "joiner", true);
+                string[] toks = Directory.GetFiles(dir, "tokens.txt", SearchOption.AllDirectories);
+                if (toks.Length > 0) tokens = toks.OrderBy(x => x.Length).First();
+                if (encoder.Length == 0 || decoder.Length == 0 || joiner.Length == 0 || tokens.Length == 0)
+                {
+                    error = "流式模型不完整：需要 encoder.onnx、decoder.onnx、joiner.onnx 和 tokens.txt。";
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "读取流式模型失败：" + ex.Message;
+                return false;
+            }
+        }
+
+        private static string PickOnnx(string[] files, string exactName, string prefix, bool preferInt8)
+        {
+            string exact = files.FirstOrDefault(f =>
+                string.Equals(Path.GetFileName(f), exactName, StringComparison.OrdinalIgnoreCase));
+            if (exact != null) return exact;
+            var hits = files.Where(f => Path.GetFileName(f).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToArray();
+            if (hits.Length == 0) return "";
+            if (preferInt8)
+            {
+                string q = hits.FirstOrDefault(f =>
+                    Path.GetFileName(f).IndexOf("int8", StringComparison.OrdinalIgnoreCase) >= 0);
+                if (q != null) return q;
+            }
+            else
+            {
+                string q = hits.FirstOrDefault(f =>
+                    Path.GetFileName(f).IndexOf("int8", StringComparison.OrdinalIgnoreCase) < 0);
+                if (q != null) return q;
+            }
+            return hits[0];
+        }
+
+        /// <summary>加载流式模型（后台线程调用）。与离线模型互斥，切换时会释放另一套识别器。</summary>
+        public void LoadStream(string dirOrFile, int threads)
+        {
+            string enc, dec, join, tokens, err;
+            if (!TryResolveStream(dirOrFile, out enc, out dec, out join, out tokens, out err))
+                throw new InvalidOperationException(err);
+            threads = threads <= 0 ? Math.Clamp(Environment.ProcessorCount / 2, 2, 6) : Math.Clamp(threads, 1, 16);
+
+            lock (_gate)
+            {
+                var sw = Stopwatch.StartNew();
+                if (_onlineStream != null) { try { _onlineStream.Dispose(); } catch { } }
+                if (_online != null) { try { _online.Dispose(); } catch { } }
+                if (_rec != null) { try { _rec.Dispose(); } catch { } }
+                _onlineStream = null; _online = null; _rec = null;
+                _modelPath = ""; _tokensPath = "";
+
+                var cfg = new OnlineRecognizerConfig();
+                cfg.FeatConfig.SampleRate = 16000;
+                cfg.FeatConfig.FeatureDim = 80;
+                cfg.ModelConfig.Transducer.Encoder = enc;
+                cfg.ModelConfig.Transducer.Decoder = dec;
+                cfg.ModelConfig.Transducer.Joiner = join;
+                cfg.ModelConfig.Tokens = tokens;
+                cfg.ModelConfig.Provider = "cpu";
+                cfg.ModelConfig.NumThreads = threads;
+                cfg.ModelConfig.Debug = 0;
+                cfg.ModelConfig.ModelType = "zipformer";
+                cfg.DecodingMethod = "greedy_search";
+                cfg.EnableEndpoint = 0; // 断句由字幕循环里的静音检测决定
+
+                _online = new OnlineRecognizer(cfg);
+                _onlineStream = _online.CreateStream();
+                _modelPath = enc;
+                _tokensPath = tokens;
+                _threads = threads;
+                App.Log("ASR：流式模型加载完成 " + Path.GetFileName(enc) + " 线程=" + threads
+                        + " 耗时=" + sw.Elapsed.TotalSeconds.ToString("0.0") + "s");
+            }
+        }
+
+        /// <summary>把新音频喂给流式识别器（可以每次 20~250ms）。</summary>
+        public void StreamAccept(float[] samples, int sampleRate = 16000)
+        {
+            if (samples == null || samples.Length == 0) return;
+            lock (_gate)
+            {
+                if (_onlineStream == null) throw new InvalidOperationException("流式语音模型还没加载");
+                _onlineStream.AcceptWaveform(sampleRate, samples);
+            }
+        }
+
+        /// <summary>取当前流式结果；反复调用只会得到越来越完整的同一句。</summary>
+        public string StreamDecode()
+        {
+            lock (_gate)
+            {
+                if (_online == null || _onlineStream == null) throw new InvalidOperationException("流式语音模型还没加载");
+                int guard = 0;
+                while (_online.IsReady(_onlineStream) && guard++ < 200) _online.Decode(_onlineStream);
+                var r = _online.GetResult(_onlineStream);
+                return CleanText(r == null ? "" : r.Text);
+            }
+        }
+
+        /// <summary>一句结束后清空解码器状态，下一句从头开始。</summary>
+        public void StreamReset()
+        {
+            lock (_gate)
+            {
+                if (_online != null && _onlineStream != null) _online.Reset(_onlineStream);
+            }
+        }
+
         public void Dispose()
         {
             lock (_gate)
             {
                 if (_rec != null) { try { _rec.Dispose(); } catch { } }
-                _rec = null;
+                if (_onlineStream != null) { try { _onlineStream.Dispose(); } catch { } }
+                if (_online != null) { try { _online.Dispose(); } catch { } }
+                _rec = null; _onlineStream = null; _online = null;
             }
         }
     }

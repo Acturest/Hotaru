@@ -33,7 +33,8 @@ Speech recognition, dictionary lookup and the system voices run locally. Only tr
 
 **Captions & dictionary (offline, CPU only)**
 - Captures what your PC is playing via WASAPI loopback — no microphone permission — and
-  transcribes it with an INT8 Parakeet 0.6B Japanese model through sherpa-onnx.
+  transcribes it locally through sherpa-onnx: the default INT8 Parakeet 0.6B Japanese model
+  (segment-by-segment), or an optional streaming Zipformer zh/en model with live partials.
 - Two-line captions (Japanese above, Chinese below), last 60 lines scrollable.
 - Click any word to look it up: conjugated forms are deinflected first; headword, reading,
   part of speech and definitions in a panel next to the cursor.
@@ -61,7 +62,8 @@ Captions and lookup need two extra downloads, both configured in **Settings → 
 
 | Component | Used for | Where to get it |
 | --- | --- | --- |
-| ASR model folder (`model.int8.onnx` + `tokens.txt`) | live captions | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8` (the app can download it) |
+| ASR model folder (`model.int8.onnx` + `tokens.txt`) | live captions, default engine | `sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8` (the app can download it) |
+| Streaming model folder (`encoder` / `decoder` / `joiner` + `tokens.txt`) | optional live-partial captions | `sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20` |
 | Yomitan dictionary folder (`term_bank_*.json`) | click-to-lookup | Jitendex, or any Yomitan-format dictionary (also downloadable in-app) |
 
 ## Configuration
@@ -77,7 +79,9 @@ Captions and lookup need two extra downloads, both configured in **Settings → 
 | `source` / `target` | `auto` / `zh` | language codes |
 | `chunk_limit` | `700` | characters per chunk for long text |
 | `instruction` / `genre` / `glossary` | *(empty)* | prompt controls |
-| `asr_model_dir` / `dict_dir` | *(empty)* | local paths for captions and dictionary |
+| `asr_engine` | `offline` | `offline` = Parakeet JA (original); `streaming` = Zipformer zh/en with live partials |
+| `asr_model_dir` / `asr_stream_model_dir` | *(empty)* | local model folders for the two engines |
+| `dict_dir` | *(empty)* | local path for the dictionary |
 | `speak_engine` | `system` | `system` voices or `edge` (online, neural) |
 | `hotkey_toggle` / `hotkey_select` | `Ctrl+Alt+Q` / `Ctrl+Alt+W` | empty string = don't register |
 
@@ -124,7 +128,8 @@ Core/AppConfig.cs               config, language list, model tiers
 | --- | --- | --- |
 | [Index-Translate](https://github.com/bilibili/Index-Translate) | the translation models, and the free public OpenAI-compatible API (`index-translate.bilibili.com/v1`) the app defaults to | Apache-2.0 |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | offline ASR engine and C# bindings (vendored, with onnxruntime) | Apache-2.0 |
-| [NVIDIA Parakeet TDT-CTC 0.6B (Japanese)](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | the speech recognition model | CC-BY-4.0 |
+| [NVIDIA Parakeet TDT-CTC 0.6B (Japanese)](https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja) | the default speech recognition model | CC-BY-4.0 |
+| [Streaming Zipformer bilingual zh/en](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20) | the optional streaming recognition model | Apache-2.0 |
 | [Jitendex](https://github.com/stephenmk/Jitendex) | dictionary data, derived from JMdict / [EDRDG](https://www.edrdg.org/jmdict/j_jmdict.html) | CC BY-SA 4.0 |
 | [Yomitan](https://github.com/yomidevs/yomitan) | the dictionary file format the lookup panel reads | GPL-3.0 (format only) |
 | [edge-tts](https://github.com/rany2/edge-tts) | documented the Edge Read Aloud protocol and the `Sec-MS-GEC` derivation this C# port follows | GPL-3.0 |

@@ -146,9 +146,13 @@ namespace FloatingTranslator
         /// <summary>sway 系数（-1 = 服务端默认值）。</summary>
         public double irodori_sway_coeff { get; set; } = -1.0;
 
-        // ---- 语音识别（ASR：sherpa-onnx + Parakeet 日语 CTC 模型，CPU INT8） ----
-        /// <summary>模型文件夹：里面要有 model.int8.onnx（或 model.onnx）和 tokens.txt。也可以直接填 onnx 文件路径。</summary>
+        // ---- 语音识别（ASR：sherpa-onnx，CPU INT8；原方案 Parakeet 日语，另可选流式 Zipformer 中英） ----
+        /// <summary>识别方案：offline = 原 Parakeet 日语整段识别；streaming = Zipformer 中英流式识别。</summary>
+        public string asr_engine { get; set; } = "offline";
+        /// <summary>离线模型文件夹：里面要有 model.int8.onnx（或 model.onnx）和 tokens.txt。也可以直接填 onnx 文件路径。</summary>
         public string asr_model_dir { get; set; } = "";
+        /// <summary>流式模型文件夹：里面要有 encoder/decoder/joiner 三个 onnx 和 tokens.txt。</summary>
+        public string asr_stream_model_dir { get; set; } = "";
         /// <summary>CPU 线程数（0 = 自动按核心数算）。</summary>
         public int asr_threads { get; set; } = 0;
         /// <summary>识别完成后是否自动把结果送进翻译。</summary>
@@ -307,6 +311,8 @@ namespace FloatingTranslator
             // 切分前缀：历史配置里没有这个键（反序列化后是 null），别让朗读路径里出现 null 拼接
             if (cfg.irodori_chunk_prefix == null) cfg.irodori_chunk_prefix = "";
             if (cfg.asr_model_dir == null) cfg.asr_model_dir = "";
+            if (cfg.asr_stream_model_dir == null) cfg.asr_stream_model_dir = "";
+            if (cfg.asr_engine != "streaming") cfg.asr_engine = "offline";
             if (cfg.dict_dir == null) cfg.dict_dir = "";
             if (cfg.asr_threads < 0) cfg.asr_threads = 0;
             if (cfg.asr_threads > 16) cfg.asr_threads = 16;
@@ -356,7 +362,8 @@ namespace FloatingTranslator
             irodori_cfg_caption = d.irodori_cfg_caption; irodori_cfg_speaker = d.irodori_cfg_speaker;
             irodori_cfg_joint = d.irodori_cfg_joint; irodori_t_schedule = d.irodori_t_schedule;
             irodori_num_steps = d.irodori_num_steps; irodori_sway_coeff = d.irodori_sway_coeff;
-            asr_model_dir = d.asr_model_dir; asr_threads = d.asr_threads;
+            asr_engine = d.asr_engine; asr_model_dir = d.asr_model_dir;
+            asr_stream_model_dir = d.asr_stream_model_dir; asr_threads = d.asr_threads;
             asr_auto_translate = d.asr_auto_translate;
             dict_dir = d.dict_dir; dict_on = d.dict_on; dict_preload = d.dict_preload;
             dict_speak = d.dict_speak;
