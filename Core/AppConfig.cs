@@ -444,15 +444,18 @@ namespace FloatingTranslator
             bool hasConstraint = !string.IsNullOrWhiteSpace(instruction) || terms.Length > 0;
             var sb = new StringBuilder();
 
+            // 2B 小模型很容易把「改写」理解成「翻译成中文」，必须显式禁止换语言。
             if (!hasConstraint)
             {
-                sb.Append("请把下面这段").Append(l).Append("文本改写得更清晰易懂，保持原意，")
-                  .Append("直接输出改写结果，不要进行任何解释。\n\n").Append(text);
+                sb.Append("把下面的").Append(l).Append("句子改写成更自然、更易懂的").Append(l)
+                  .Append("。必须用").Append(l).Append("输出，禁止翻译成中文或任何其它语言，不要解释，不要加引号。")
+                  .Append("\n原文：").Append(text).Append("\n改写：");
                 return sb.ToString();
             }
 
-            sb.Append("请把下面这段").Append(l).Append(style)
-              .Append("改写得更清晰易懂，保持原意，并严格遵循所有约束要求。");
+            sb.Append("把下面的").Append(l).Append(style)
+              .Append("改写成更自然、更易懂的").Append(l)
+              .Append("。必须用").Append(l).Append("输出，禁止翻译成中文或任何其它语言，并严格遵循所有约束要求。");
             sb.Append("\n\n【原文】\n").Append(text).Append("\n\n【约束要求】\n");
 
             int n = 1;
@@ -471,7 +474,7 @@ namespace FloatingTranslator
             }
             foreach (var note in GlossaryNotes(glossary))
                 sb.Append(n++).Append(". 【注意】").Append(note).Append('\n');
-            sb.Append("\n只输出改写结果，不要有任何额外说明。");
+            sb.Append("\n只输出改写后的").Append(l).Append("文本，不要有任何额外说明。");
             return sb.ToString();
         }
 
