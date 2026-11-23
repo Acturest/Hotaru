@@ -1745,11 +1745,12 @@ namespace FloatingTranslator
                     // 真跑一遍「日→日改写 → 点中补译中文」，核对两步提示词与结果
                     case "cnreal":
                         OpenInput();
-                        _cfg.source = "ja"; _cfg.target = "ja";
+                        _cfg.source = "auto"; _cfg.target = "ja";   // 自动检测到日语 = 目标，也应算同语言改写
                         _suppressAuto = true;
                         InputBox.Text = "今日は新しい本を読んだ。とても面白かった。";
                         _suppressAuto = false;
-                        App.Log("demo cnreal: 提示词=\n" + Prompt.BuildSameLang(InputBox.Text, "ja"));
+                        App.Log("demo cnreal: 检测语言=" + Prompt.Detect(InputBox.Text)
+                                + " 提示词=\n" + Prompt.BuildSameLang(InputBox.Text, "ja"));
                         await TranslateAsync();
                         App.Log("demo cnreal: 改写结果=" + ResultText.Text + " 中按钮=" + CnBtn.Visibility);
                         if (CnBtn.Visibility == Visibility.Visible)

@@ -27,7 +27,7 @@ Speech recognition, dictionary lookup and the system voices run locally. Only tr
   OpenAI-compatible endpoint can be swapped in via `api_base`; everything below is identical.
 - Streaming output, three model tiers (`Index-Translate` 2B / 9B / 35B-A3B), with optional
   auto-downgrade that retries on the next tier down when a model stalls (12 s to first token).
-- Same-language rewrite (e.g. Japanese → Japanese, plainer wording); a 中 button then adds a
+- Same-language rewrite (Japanese → Japanese, or auto-detected source = target, plainer wording); a 中 button then adds a
   Chinese translation as an extra line in the result card.
 - 34 target languages, auto source detection, long text split at sentence boundaries.
 - Image translation without OCR: pick, drag or `Ctrl+V` a screenshot and the model reads it.

@@ -1703,10 +1703,6 @@ namespace FloatingTranslator
             string text = InputBox.Text;
             bool hasImage = _imageBytes != null;
             if (string.IsNullOrWhiteSpace(text) && !hasImage) { Toast("没有可翻译的内容"); return; }
-            // 源=目标：作为「同语言改写」处理，结果卡会多一个「中」按钮补中文对照。
-            bool sameLang = _cfg.source != "auto" &&
-                            string.Equals(_cfg.source, _cfg.target, StringComparison.OrdinalIgnoreCase);
-
             if (_cnBusy && _cnCts != null) _cnCts.Cancel();
             HideCnRow();
             _sameLangResult = false;
@@ -1726,6 +1722,11 @@ namespace FloatingTranslator
             var sw = Stopwatch.StartNew();
 
             string src = _cfg.source, tgt = _cfg.target;
+            // 源=目标（含「自动检测」检测出的语言=目标）按同语言改写处理，结果卡会多一个「中」按钮。
+            string detectedSrc = src == "auto" ? Prompt.Detect(text) : src;
+            bool sameLang = !hasImage &&
+                            !string.Equals(detectedSrc, "auto", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(detectedSrc, tgt, StringComparison.OrdinalIgnoreCase);
             string glossary = _cfg.glossary_on ? _cfg.glossary : "";
             try
             {
@@ -1742,7 +1743,8 @@ namespace FloatingTranslator
                 string final;
                 int chunkCount = 1;
                 bool imageMode = _imageBytes != null;
-                App.Log("翻译请求: " + (imageMode ? "图片" : src + "→" + tgt + (sameLang ? "（同语言改写）" : ""))
+                App.Log("翻译请求: " + (imageMode ? "图片"
+                            : (src == "auto" ? "auto(" + detectedSrc + ")" : src) + "→" + tgt + (sameLang ? "（同语言改写）" : ""))
                         + " · 源 " + text.Length
                         + " 字 · 约束 " + Prompt.ConstraintSummary(_cfg.instruction, _cfg.glossary, _cfg.glossary_on, _cfg.genre));
                 if (imageMode)
@@ -1785,7 +1787,7 @@ namespace FloatingTranslator
                 ResultMeta.Text = meta;
 
                 App.History.Add(imageMode ? ("[图片] " + _imageName + (string.IsNullOrWhiteSpace(text) ? "" : " · " + text)) : text,
-                                final, src == "auto" ? Prompt.Detect(text) : src, tgt);
+                                final, detectedSrc, tgt);
 
                 if (_cfg.auto_copy) SetClipboardText(final);
                 if (_cfg.auto_speak) SpeakText(final, tgt, false);
