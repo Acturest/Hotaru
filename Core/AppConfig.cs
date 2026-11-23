@@ -432,6 +432,50 @@ namespace FloatingTranslator
         }
 
         /// <summary>
+        /// 同语言翻译（如 日→日）：不是换语言，而是用同一语言把原文改写得更清晰易懂。
+        /// 约束要求沿用 Build 的逻辑，只是把「翻译成」换成「改写」。
+        /// </summary>
+        public static string BuildSameLang(string text, string lang, string instruction = "",
+                                           string glossary = "", string genre = "")
+        {
+            string l = AppConfig.LangName(lang);
+            string style = string.IsNullOrWhiteSpace(genre) ? "文本" : genre.Trim();
+            string terms = ParseGlossaryTerms(glossary);
+            bool hasConstraint = !string.IsNullOrWhiteSpace(instruction) || terms.Length > 0;
+            var sb = new StringBuilder();
+
+            if (!hasConstraint)
+            {
+                sb.Append("请把下面这段").Append(l).Append("文本改写得更清晰易懂，保持原意，")
+                  .Append("直接输出改写结果，不要进行任何解释。\n\n").Append(text);
+                return sb.ToString();
+            }
+
+            sb.Append("请把下面这段").Append(l).Append(style)
+              .Append("改写得更清晰易懂，保持原意，并严格遵循所有约束要求。");
+            sb.Append("\n\n【原文】\n").Append(text).Append("\n\n【约束要求】\n");
+
+            int n = 1;
+            if (terms.Length > 0)
+                sb.Append(n++).Append(". 【硬性要求】专名/术语保持不变: ").Append(terms).Append('\n');
+            if (!string.IsNullOrWhiteSpace(instruction))
+            {
+                foreach (var raw in instruction.Replace("\r", "").Split('\n'))
+                {
+                    string line = raw.Trim();
+                    line = System.Text.RegularExpressions.Regex.Replace(line, @"^\s*\d+\s*[\.、\)]\s*", "").Trim();
+                    if (line.Length == 0) continue;
+                    bool tagged = line.StartsWith("【硬性要求】") || line.StartsWith("【注意】") || line.StartsWith("【软性要求】");
+                    sb.Append(n++).Append(". ").Append(tagged ? "" : "【注意】").Append(line).Append('\n');
+                }
+            }
+            foreach (var note in GlossaryNotes(glossary))
+                sb.Append(n++).Append(". 【注意】").Append(note).Append('\n');
+            sb.Append("\n只输出改写结果，不要有任何额外说明。");
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// 图片翻译提示词（对齐官方 --image 分支）：文本作为「参考文本/关注内容」一起发过去。
         /// </summary>
         public static string BuildImage(string referenceText, string targetLang, string sourceLang = "auto",

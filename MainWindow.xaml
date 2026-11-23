@@ -173,6 +173,7 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="*"/>
           <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <ScrollViewer x:Name="ResultScroll" Grid.Row="0" MaxHeight="196"
@@ -187,13 +188,35 @@
                    AcceptsReturn="True" Cursor="IBeam"/>
         </ScrollViewer>
 
-        <Border Grid.Row="1" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0"
+        <!-- 同语言翻译（如 日→日）时，「中」按钮补出来的中文对照，单独占一行 -->
+        <Border x:Name="CnRow" Grid.Row="1" Visibility="Collapsed"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0"
+                Margin="0,10,0,0" Padding="0,8,0,0">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="中" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{StaticResource AccentBrush}" Margin="0,2,8,0"/>
+            <TextBlock x:Name="CnText" Grid.Column="1" FontSize="12.5" TextWrapping="Wrap"
+                       Foreground="{StaticResource ResultTextBrush}"/>
+          </Grid>
+        </Border>
+
+        <Border Grid.Row="2" BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0"
                 Margin="0,10,0,0" Padding="0,8,0,0">
           <Grid>
             <TextBlock x:Name="ResultMeta" HorizontalAlignment="Left" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" Margin="0,0,8,0"
                        Foreground="{StaticResource DimBrush}" FontSize="11"/>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <!-- 同语言翻译（日→日等）时点它把结果补译成中文，额外一行显示 -->
+            <Button x:Name="CnBtn" Style="{StaticResource IconBtnSmall}" Margin="0,0,6,0"
+                    Visibility="Collapsed" ToolTip="把结果翻译成中文（在上方加一行）">
+              <TextBlock x:Name="CnIcon" Text="中" FontSize="13" FontWeight="SemiBold"
+                         Foreground="{StaticResource AccentBrush}" IsHitTestVisible="False"/>
+            </Button>
             <!-- 第三方语音：本地 Irodori-TTS，只在目标语言为日语时出现（和系统朗读按钮并存） -->
             <Button x:Name="IrodoriBtn" Style="{StaticResource IconBtnSmall}" Margin="0,0,6,0"
                     Visibility="Collapsed" ToolTip="用本地 Irodori-TTS 朗读（日语）">

@@ -201,6 +201,9 @@ namespace FloatingTranslator
                 _cfg.target = code;
                 _cfg.Save();
                 UpdateIrodoriBtn();
+                _sameLangResult = false;
+                HideCnRow();
+                CnBtn.Visibility = Visibility.Collapsed;
                 Toast("目标语言：" + AppConfig.LangName(code));
                 if (InputBox.Text.Length > 0 && !_busy) _ = TranslateAsync();
             });
@@ -569,8 +572,16 @@ namespace FloatingTranslator
 
             // ---------- 翻译 · 语言与参数 ----------
             SettingsStack.Children.Add(SectionTitle("语言与参数"));
-            var bSrc = SelectRow("源语言", AppConfig.LangName(_cfg.source), () => LangItems(true), v => { _cfg.source = v; });
-            var bTgt = SelectRow("目标语言", AppConfig.LangName(_cfg.target), () => LangItems(false), v => { _cfg.target = v; });
+            var bSrc = SelectRow("源语言", AppConfig.LangName(_cfg.source), () => LangItems(true), v =>
+            {
+                _cfg.source = v;
+                _sameLangResult = false; HideCnRow(); CnBtn.Visibility = Visibility.Collapsed;
+            });
+            var bTgt = SelectRow("目标语言", AppConfig.LangName(_cfg.target), () => LangItems(false), v =>
+            {
+                _cfg.target = v;
+                _sameLangResult = false; HideCnRow(); CnBtn.Visibility = Visibility.Collapsed;
+            });
             var fMax = Field(_cfg.max_tokens.ToString());
             SettingsStack.Children.Add(RowSide("最大长度", fMax));
             var fTemp = Field(_cfg.temperature.ToString("0.##"));
@@ -1664,6 +1675,9 @@ namespace FloatingTranslator
             _suppressAuto = true;
             InputBox.Text = it.input;
             _suppressAuto = false;
+            _sameLangResult = false;
+            HideCnRow();
+            CnBtn.Visibility = Visibility.Collapsed;
             SetResult(it.output ?? "");
             ResultMeta.Text = "来自历史 · " + AppConfig.LangName(it.g);
             ShowResultCard();
@@ -1722,6 +1736,47 @@ namespace FloatingTranslator
                         ShowResultCard();
                         PositionAll();
                         await Task.Delay(400);
+                        {
+                            string shot = Environment.GetEnvironmentVariable("FT_SHOT");
+                            if (!string.IsNullOrWhiteSpace(shot)) SaveShot(shot);
+                        }
+                        break;
+
+                    // 真跑一遍「日→日改写 → 点中补译中文」，核对两步提示词与结果
+                    case "cnreal":
+                        OpenInput();
+                        _cfg.source = "ja"; _cfg.target = "ja";
+                        _suppressAuto = true;
+                        InputBox.Text = "今日は新しい本を読んだ。とても面白かった。";
+                        _suppressAuto = false;
+                        App.Log("demo cnreal: 提示词=\n" + Prompt.BuildSameLang(InputBox.Text, "ja"));
+                        await TranslateAsync();
+                        App.Log("demo cnreal: 改写结果=" + ResultText.Text + " 中按钮=" + CnBtn.Visibility);
+                        if (CnBtn.Visibility == Visibility.Visible)
+                        {
+                            CnBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            for (int i = 0; i < 40 && _cnBusy; i++) await Task.Delay(500);
+                            App.Log("demo cnreal: 中文行=" + CnText.Text + " 元信息=" + ResultMeta.Text);
+                        }
+                        break;
+
+                    // 同语言改写 + 「中」按钮补出来的第三行，配合 FT_SHOT 核对布局
+                    case "cnline":
+                        OpenInput();
+                        _suppressAuto = true;
+                        InputBox.Text = "今日は新しい本を読んだ。とても面白かった。";
+                        _suppressAuto = false;
+                        SetResult("今日、私は新しい本を読みました。その本はとても興味深い内容でした。");
+                        ResultMeta.Text = "0.8s · 日语改写 · 已补中文";
+                        _sameLangResult = true;
+                        UpdateCnBtn();
+                        CnRow.Visibility = Visibility.Visible;
+                        CnText.Text = "今天我读了一本新书。那本书的内容非常有意思。";
+                        ShowResultCard();
+                        PositionAll();
+                        App.Log("demo cnline: 中按钮=" + CnBtn.Visibility + " 中文行=" + CnRow.Visibility
+                                + " 卡片高=" + CardHeight(ResultCard).ToString("0.0"));
+                        await Task.Delay(500);   // 等显隐动画跑完再截图
                         {
                             string shot = Environment.GetEnvironmentVariable("FT_SHOT");
                             if (!string.IsNullOrWhiteSpace(shot)) SaveShot(shot);

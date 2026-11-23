@@ -47,6 +47,10 @@ namespace FloatingTranslator
 
         private CancellationTokenSource _cts;
         private bool _busy;
+        // 同语言翻译后补译中文：独立于主翻译的取消源，避免 Esc 一按把两条都cancel掉时状态混乱
+        private CancellationTokenSource _cnCts;
+        private bool _cnBusy;
+        private bool _sameLangResult;          // 本轮结果是不是「同语言改写」
         private readonly StringBuilder _stream = new StringBuilder();
 
         private double _orbX, _orbY;
@@ -148,6 +152,7 @@ namespace FloatingTranslator
             ClearBtn.Click += ClearBtn_Click;
             CopyBtn.Click += CopyBtn_Click;
             SpeakBtn.Click += SpeakBtn_Click;
+            CnBtn.Click += CnBtn_Click;
             IrodoriBtn.Click += IrodoriBtn_Click;
 
             // 图片翻译：按钮选文件 / 拖进来 / Ctrl+V 粘贴截图
@@ -577,6 +582,7 @@ namespace FloatingTranslator
                 if (SettingsPanel.Visibility == Visibility.Visible) { CloseSettingsPanel(); e.Handled = true; return; }
                 if (DictPanel.Visibility == Visibility.Visible) { HideDictPanel(); e.Handled = true; return; }
                 if (AsrCard.Visibility == Visibility.Visible) { CloseAsrCard(true); e.Handled = true; return; }
+                if (_cnBusy && _cnCts != null) { _cnCts.Cancel(); e.Handled = true; return; }
                 if (_busy && _cts != null) { _cts.Cancel(); Toast("已取消翻译"); e.Handled = true; return; }
                 if (_imageBytes != null) { ClearImage(); Toast("已移除图片"); e.Handled = true; return; }
                 if (_inputOpen) { CloseInput(); e.Handled = true; }
@@ -809,8 +815,12 @@ namespace FloatingTranslator
         private void ClearBtn_Click(object sender, RoutedEventArgs e)
         {
             if (_cts != null && _busy) _cts.Cancel();
+            if (_cnBusy && _cnCts != null) _cnCts.Cancel();
             StopIrodori();
             CleanupIrodoriAudio();   // 清空之后这段译文就没了，语音文件也跟着删
+            _sameLangResult = false;
+            HideCnRow();
+            CnBtn.Visibility = Visibility.Collapsed;
             _suppressAuto = true;
             InputBox.Clear();
             _suppressAuto = false;
@@ -1612,6 +1622,80 @@ namespace FloatingTranslator
             ResultScroll.ScrollToEnd();
         }
 
+        // ---------- 同语言翻译：把结果补译成中文，额外一行显示 ----------
+
+        /// <summary>「中」按钮只在「源语言=目标语言」那轮结果上出现；切换语言后自动隐藏。</summary>
+        private void UpdateCnBtn()
+        {
+            bool same = _sameLangResult && !string.IsNullOrWhiteSpace(ResultText.Text);
+            CnBtn.Visibility = same ? Visibility.Visible : Visibility.Collapsed;
+            if (!same) HideCnRow();
+        }
+
+        private void HideCnRow()
+        {
+            CnText.Text = "";
+            CnRow.Visibility = Visibility.Collapsed;
+            CnIcon.Text = "中";
+            CnBtn.ToolTip = "把结果翻译成中文（在上方加一行）";
+        }
+
+        private void CnBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_cnBusy)
+            {
+                _cnCts?.Cancel();
+                return;
+            }
+            string src = (ResultText.Text ?? "").Trim();
+            if (src.Length == 0) { Toast("还没有结果"); return; }
+            _ = TranslateCnAsync(src);
+        }
+
+        private async Task TranslateCnAsync(string src)
+        {
+            _cnBusy = true;
+            CnIcon.Text = "…";
+            CnBtn.ToolTip = "点击停止补译";
+            CnRow.Visibility = Visibility.Visible;
+            CnText.Text = "翻译中…";
+            PositionAll();
+            _cnCts = new CancellationTokenSource();
+            var sb = new StringBuilder();
+            try
+            {
+                string prompt = Prompt.Build(src, "zh", _cfg.source == "auto" ? "" : _cfg.source);
+                string cn = await _client.TranslateAsync(prompt, delta =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        sb.Append(delta);
+                        CnText.Text = sb.ToString();
+                    }, DispatcherPriority.Background);
+                }, _cnCts.Token);
+                CnText.Text = string.IsNullOrWhiteSpace(cn) ? src : cn.Trim();
+                ResultMeta.Text = (ResultMeta.Text ?? "").Split(" · 已补中文")[0] + " · 已补中文";
+            }
+            catch (OperationCanceledException)
+            {
+                CnText.Text = "已取消";
+            }
+            catch (Exception ex)
+            {
+                CnText.Text = "";
+                CnRow.Visibility = Visibility.Collapsed;
+                Toast(ex.Message, true);
+                App.Log("中文补译失败: " + ex.Message);
+            }
+            finally
+            {
+                _cnBusy = false;
+                CnIcon.Text = "中";
+                CnBtn.ToolTip = "把结果翻译成中文（在上方加一行）";
+                PositionAll();
+            }
+        }
+
         // ============================ 翻译 ============================
         private async Task TranslateAsync()
         {
@@ -1619,11 +1703,14 @@ namespace FloatingTranslator
             string text = InputBox.Text;
             bool hasImage = _imageBytes != null;
             if (string.IsNullOrWhiteSpace(text) && !hasImage) { Toast("没有可翻译的内容"); return; }
-            if (_cfg.source != "auto" && _cfg.source == _cfg.target)
-            {
-                Toast("源语言与目标语言相同");
-                return;
-            }
+            // 源=目标：作为「同语言改写」处理，结果卡会多一个「中」按钮补中文对照。
+            bool sameLang = _cfg.source != "auto" &&
+                            string.Equals(_cfg.source, _cfg.target, StringComparison.OrdinalIgnoreCase);
+
+            if (_cnBusy && _cnCts != null) _cnCts.Cancel();
+            HideCnRow();
+            _sameLangResult = false;
+            CnBtn.Visibility = Visibility.Collapsed;
 
             _busy = true;
             TranslateBtn.IsEnabled = false;
@@ -1655,7 +1742,8 @@ namespace FloatingTranslator
                 string final;
                 int chunkCount = 1;
                 bool imageMode = _imageBytes != null;
-                App.Log("翻译请求: " + (imageMode ? "图片" : src + "→" + tgt) + " · 源 " + text.Length
+                App.Log("翻译请求: " + (imageMode ? "图片" : src + "→" + tgt + (sameLang ? "（同语言改写）" : ""))
+                        + " · 源 " + text.Length
                         + " 字 · 约束 " + Prompt.ConstraintSummary(_cfg.instruction, _cfg.glossary, _cfg.glossary_on, _cfg.genre));
                 if (imageMode)
                 {
@@ -1673,15 +1761,20 @@ namespace FloatingTranslator
                     var parts = new List<string>();
                     for (int i = 0; i < chunks.Count; i++)
                     {
-                        string prompt = Prompt.Build(chunks[i], tgt, src, _cfg.instruction, glossary, _cfg.genre);
+                        string prompt = sameLang
+                            ? Prompt.BuildSameLang(chunks[i], tgt, _cfg.instruction, glossary, _cfg.genre)
+                            : Prompt.Build(chunks[i], tgt, src, _cfg.instruction, glossary, _cfg.genre);
                         parts.Add(await _client.TranslateAsync(prompt, onDelta, _cts.Token));
                     }
                     final = string.Join("", parts).Trim();
                 }
                 SetResult(final);
+                _sameLangResult = sameLang;
+                UpdateCnBtn();
                 sw.Stop();
                 double sec = sw.Elapsed.TotalSeconds;
-                string meta = sec.ToString("0.0", CultureInfo.InvariantCulture) + "s · " + AppConfig.LangName(tgt);
+                string meta = sec.ToString("0.0", CultureInfo.InvariantCulture) + "s · "
+                            + AppConfig.LangName(tgt) + (sameLang ? "改写" : "");
                 if (imageMode) meta += " · 图片";
                 else if (chunkCount > 1) meta += " · " + chunkCount + " 段";
                 meta += " · " + final.Length + " 字";
