@@ -446,6 +446,7 @@ namespace FloatingTranslator
                     SetSelectText(btn, LabelOf(items(), v));
                     _selectValues[btn] = v;
                     pick(v);
+                    LiveApply();   // 下拉选择也要走保存：否则只改内存，关掉进程就丢
                 }, 190);
             };
             _selectValues[btn] = current;
